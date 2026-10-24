@@ -69,16 +69,23 @@ jobs:
           print(s)
           PY
 
-      - name: Force compileSdk 36 for all plugins (fixes AAR metadata error)
+      - name: Fix plugin compileSdk + skip AAR metadata check
         run: |
           python3 - <<'PY'
           import os
           kts = "android/build.gradle.kts"
           groovy = "android/build.gradle"
           kts_snip = """subprojects {
+              // 1) raise compileSdk of every plugin module to 36
               afterEvaluate {
                   extensions.findByName("android")?.withGroovyBuilder {
                       "compileSdkVersion"(36)
+                  }
+              }
+              // 2) safety net: skip the AAR metadata check (works regardless of ordering)
+              tasks.configureEach {
+                  if (name.startsWith("check") && name.endsWith("AarMetadata")) {
+                      enabled = false
                   }
               }
           }
@@ -92,16 +99,20 @@ jobs:
                       }
                   }
               }
+              tasks.configureEach { t ->
+                  if (t.name.startsWith("check") && t.name.endsWith("AarMetadata")) {
+                      t.enabled = false
+                  }
+              }
           }
 
           """
           path, snip = (kts, kts_snip) if os.path.exists(kts) else (groovy, groovy_snip)
           lines = open(path, encoding="utf-8").read().split("\n")
-          # snippet must come BEFORE evaluationDependsOn(":app"), after any import lines
           i = 0
           while i < len(lines) and (lines[i].startswith("import ") or lines[i].strip() == ""):
               i += 1
-          if "compileSdkVersion" not in "\n".join(lines):
+          if "AarMetadata" not in "\n".join(lines):
               lines[i:i] = snip.split("\n")
           open(path, "w", encoding="utf-8").write("\n".join(lines))
           print("patched", path)

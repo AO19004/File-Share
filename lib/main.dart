@@ -11,7 +11,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
@@ -61,6 +60,9 @@ const Map<String, Map<String, String>> T = {
     'b_selected': 'انتخاب‌شده: {n}',
     'b_hint': 'برای باز شدن پوشه روی آن بزنید. مربع سبز را بزنید تا انتخاب شود. برای منو، نگه دارید.',
     'internal': 'حافظه داخلی',
+    'pick_folder': 'انتخاب پوشه',
+    'b_up': '⬆ بالا',
+    'select_this': '✔ انتخاب این پوشه',
     'dir_send': 'ارسال',
     'dir_recv': 'دریافت',
     'st_ok': 'موفق',
@@ -160,6 +162,9 @@ const Map<String, Map<String, String>> T = {
     'b_selected': 'Selected: {n}',
     'b_hint': 'Tap a folder to open it. Tap the green square to select. Long-press for a menu.',
     'internal': 'Internal storage',
+    'pick_folder': 'Choose folder',
+    'b_up': '⬆ Up',
+    'select_this': '✔ Select this folder',
     'dir_send': 'Sent',
     'dir_recv': 'Received',
     'st_ok': 'OK',
@@ -1774,6 +1779,101 @@ class FavTab extends StatelessWidget {
       );
 }
 
+// ---------------------------------------------------------------- انتخاب پوشه (بدون افزونه)
+class FolderPickerPage extends StatefulWidget {
+  final AppState st;
+  final String start;
+  const FolderPickerPage({super.key, required this.st, required this.start});
+  @override
+  State<FolderPickerPage> createState() => _FolderPickerPageState();
+}
+
+class _FolderPickerPageState extends State<FolderPickerPage> {
+  static const String rootPath = '/storage/emulated/0';
+  late String cwd;
+  List<Directory> dirs = [];
+  final sc = ScrollController();
+  AppState get st => widget.st;
+
+  @override
+  void initState() {
+    super.initState();
+    cwd = Directory(widget.start).existsSync() ? widget.start : rootPath;
+    _load();
+  }
+
+  @override
+  void dispose() {
+    sc.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final out = <Directory>[];
+    try {
+      await for (final e in Directory(cwd).list(followLinks: false).handleError((_) {})) {
+        if (e is Directory) out.add(e);
+      }
+    } catch (_) {}
+    out.sort((a, b) => a.path.toLowerCase().compareTo(b.path.toLowerCase()));
+    if (mounted) setState(() => dirs = out);
+  }
+
+  void _go(String p) {
+    cwd = p;
+    _load();
+  }
+
+  void _up() {
+    final parent = Directory(cwd).parent.path;
+    if (parent != cwd && cwd != '/' && cwd != '/storage') _go(parent);
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: kBorder,
+        appBar: AppBar(backgroundColor: kBorder, foregroundColor: Colors.white, title: Text(st.t('pick_folder'))),
+        body: SafeArea(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(5, 0, 5, 5),
+            color: kBg,
+            child: Column(children: [
+              Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: SelectableText(cwd, style: const TextStyle(color: kBlue, fontWeight: FontWeight.bold))),
+              Expanded(
+                child: Scrollbar(
+                  controller: sc,
+                  thumbVisibility: true,
+                  interactive: true,
+                  child: ListView.builder(
+                    controller: sc,
+                    itemCount: dirs.length,
+                    itemBuilder: (c, i) {
+                      final d = dirs[i];
+                      return ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.folder, color: kOrange),
+                        title: Text(d.path.split('/').last),
+                        onTap: () => _go(d.path),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Wrap(spacing: 8, runSpacing: 8, children: [
+                  RBtn(st.t('b_up'), kBlue, _up),
+                  RBtn(st.t('select_this'), kGreen, () => Navigator.pop(context, cwd)),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      );
+}
+
 // ---------------------------------------------------------------- تنظیمات
 class SettingsDialog extends StatefulWidget {
   final AppState st;
@@ -1811,7 +1911,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
               IconButton(
                 icon: const Icon(Icons.folder_open),
                 onPressed: () async {
-                  final d = await FilePicker.platform.getDirectoryPath();
+                  final d = await Navigator.push<String>(
+                      context, MaterialPageRoute(builder: (_) => FolderPickerPage(st: st, start: dirC.text)));
                   if (d != null) setState(() => dirC.text = d);
                 },
               ),

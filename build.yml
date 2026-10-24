@@ -76,13 +76,13 @@ jobs:
           kts = "android/build.gradle.kts"
           groovy = "android/build.gradle"
           kts_snip = """subprojects {
-              // 1) raise compileSdk of every plugin module to 36
+              // raise compileSdk of every module (app + plugins) so newer plugins pass the check
               afterEvaluate {
                   extensions.findByName("android")?.withGroovyBuilder {
-                      "compileSdkVersion"(36)
+                      "compileSdkVersion"(37)
                   }
               }
-              // 2) safety net: skip the AAR metadata check (works regardless of ordering)
+              // safety net: skip the AAR metadata check (works regardless of ordering)
               tasks.configureEach {
                   if (name.startsWith("check") && name.endsWith("AarMetadata")) {
                       enabled = false
@@ -95,7 +95,7 @@ jobs:
               afterEvaluate { project ->
                   if (project.hasProperty("android")) {
                       project.android {
-                          compileSdkVersion 36
+                          compileSdkVersion 37
                       }
                   }
               }
@@ -107,7 +107,13 @@ jobs:
           }
 
           """
-          path, snip = (kts, kts_snip) if os.path.exists(kts) else (groovy, groovy_snip)
+          if os.path.exists(kts):
+              path, snip = kts, kts_snip
+          elif os.path.exists(groovy):
+              path, snip = groovy, groovy_snip
+          else:
+              path, snip = kts, kts_snip      # no root script in this template: create one
+              open(path, "w", encoding="utf-8").write("")
           lines = open(path, encoding="utf-8").read().split("\n")
           i = 0
           while i < len(lines) and (lines[i].startswith("import ") or lines[i].strip() == ""):
@@ -115,8 +121,17 @@ jobs:
           if "AarMetadata" not in "\n".join(lines):
               lines[i:i] = snip.split("\n")
           open(path, "w", encoding="utf-8").write("\n".join(lines))
-          print("patched", path)
+
+          # AGP only recommends up to a certain compileSdk; this just silences that warning
+          gp = "android/gradle.properties"
+          txt = open(gp, encoding="utf-8").read() if os.path.exists(gp) else ""
+          if "suppressUnsupportedCompileSdk" not in txt:
+              open(gp, "a", encoding="utf-8").write("\nandroid.suppressUnsupportedCompileSdk=37\n")
+
+          print("==== PATCH APPLIED TO:", path, "====")
           print("\n".join(lines))
+          print("==== android/gradle.properties ====")
+          print(open(gp, encoding="utf-8").read())
           PY
 
       - name: Get packages

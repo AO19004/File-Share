@@ -6,15 +6,13 @@ version: 1.0.0+1
 environment:
   sdk: ">=3.0.0 <4.0.0"
 
+# Only 3 plugins, versions from the same era as Flutter 3.27 (consistent toolchain)
 dependencies:
   flutter:
     sdk: flutter
-  # open ranges: pub picks the newest versions compatible with the Flutter on the build machine
-  shared_preferences: ">=2.2.0"
-  permission_handler: ">=11.0.0"
-  open_filex: ">=4.3.0"
-  path_provider: ">=2.1.0"
-  wakelock_plus: ">=1.2.0"
+  shared_preferences: ">=2.3.0 <2.4.0"
+  permission_handler: 11.3.1
+  open_filex: ">=4.3.4 <4.7.0"
 
 dev_dependencies:
   flutter_test:

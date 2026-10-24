@@ -14,10 +14,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 
 const kBorder = Color(0xFF1E88E5);
 const kBg = Color(0xFFF5F9FF);
@@ -546,24 +544,15 @@ class AppState extends ChangeNotifier {
       await Directory(recvDir).create(recursive: true);
     } catch (_) {
       try {
-        final d = await getExternalStorageDirectory();
-        if (d != null) {
-          recvDir = '${d.path}/FileShare';
-          await Directory(recvDir).create(recursive: true);
-        }
+        // پوشه مخصوص خود برنامه (بدون نیاز به مجوز ویژه)
+        recvDir = '/storage/emulated/0/Android/data/com.fileshare.app.fileshare/files/FileShare';
+        await Directory(recvDir).create(recursive: true);
       } catch (_) {}
     }
   }
 
-  void _updateWake() {
-    try {
-      if (receiveMode || sending) {
-        WakelockPlus.enable();
-      } else {
-        WakelockPlus.disable();
-      }
-    } catch (_) {}
-  }
+  // نگه داشتن روشن بودن صفحه: برای کم‌کردن وابستگی‌ها حذف شد (زمان خاموش شدن صفحه را در تنظیمات گوشی زیاد کنید)
+  void _updateWake() {}
 
   void setReceiveMode(bool on) {
     if (on == receiveMode) return;

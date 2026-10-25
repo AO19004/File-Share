@@ -13,9 +13,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:open_filex/open_filex.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 const kBorder = Color(0xFF1E88E5);
 const kBg = Color(0xFFF5F9FF);
@@ -92,6 +89,7 @@ const Map<String, Map<String, String>> T = {
     'w_no_recv': 'گیرنده را انتخاب کنید یا IP را وارد کنید.',
     'w_no_files': 'فایلی انتخاب نشده است.',
     'no_file': 'فایل یافت نشد.',
+    'no_app': 'برنامه‌ای برای باز کردن این فایل پیدا نشد.',
     'confirm_clear': 'کل تاریخچه پاک شود؟',
     'fav_name': 'نام مخاطب',
     'fav_ip': 'آدرس IP',
@@ -194,6 +192,7 @@ const Map<String, Map<String, String>> T = {
     'w_no_recv': 'Select a receiver or enter an IP.',
     'w_no_files': 'No files selected.',
     'no_file': 'File not found.',
+    'no_app': 'No app found to open this file.',
     'confirm_clear': 'Clear the whole history?',
     'fav_name': 'Contact name',
     'fav_ip': 'IP address',
@@ -399,9 +398,44 @@ Future<void> writeMsg(Socket s, Map<String, dynamic> m) async {
   await s.flush();
 }
 
+// ---------------------------------------------------------------- پل بومی (جایگزین افزونه‌ها)
+const MethodChannel kNative = MethodChannel('fileshare/native');
+
+/// ذخیره‌سازی ساده کلید/مقدار در فایل‌های JSON داخل پوشه خصوصی برنامه (جایگزین shared_preferences)
+class KV {
+  final Map<String, String> _m = {};
+  Directory? _dir;
+
+  Future<void> init() async {
+    String? base;
+    try {
+      base = await kNative.invokeMethod<String>('appDir');
+    } catch (_) {}
+    _dir = Directory('${base ?? Directory.systemTemp.path}/data');
+    try {
+      await _dir!.create(recursive: true);
+      await for (final e in _dir!.list()) {
+        if (e is File && e.path.endsWith('.json')) {
+          final name = e.path.split('/').last;
+          _m[name.substring(0, name.length - 5)] = await e.readAsString();
+        }
+      }
+    } catch (_) {}
+  }
+
+  String? getString(String k) => _m[k];
+
+  Future<void> setString(String k, String v) async {
+    _m[k] = v;
+    try {
+      await File('${_dir!.path}/$k.json').writeAsString(v, flush: true);
+    } catch (_) {}
+  }
+}
+
 // ---------------------------------------------------------------- وضعیت برنامه
 class AppState extends ChangeNotifier {
-  late SharedPreferences prefs;
+  final KV prefs = KV();
   String lang = 'fa';
   int port = 50505;
   String deviceName = 'Android-Phone';
@@ -446,7 +480,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> init() async {
     status = t('ready');
-    prefs = await SharedPreferences.getInstance();
+    await prefs.init();
     try {
       final s = prefs.getString('settings');
       if (s != null) {
@@ -529,11 +563,10 @@ class AppState extends ChangeNotifier {
   // ----- دسترسی‌ها -----
   Future<bool> ensureStorage() async {
     try {
-      if (await Permission.manageExternalStorage.isGranted) return true;
-      var s = await Permission.manageExternalStorage.request();
-      if (s.isGranted) return true;
-      s = await Permission.storage.request();
-      return s.isGranted;
+      final ok = await kNative.invokeMethod<bool>('hasAllFiles') ?? false;
+      if (ok) return true;
+      await kNative.invokeMethod('requestAllFiles'); // صفحه تنظیمات مجوز را باز می‌کند
+      return false;
     } catch (_) {
       return false;
     }
@@ -545,7 +578,8 @@ class AppState extends ChangeNotifier {
     } catch (_) {
       try {
         // پوشه مخصوص خود برنامه (بدون نیاز به مجوز ویژه)
-        recvDir = '/storage/emulated/0/Android/data/com.fileshare.app.fileshare/files/FileShare';
+        final d = await kNative.invokeMethod<String>('extFilesDir');
+        recvDir = '${d ?? Directory.systemTemp.path}/FileShare';
         await Directory(recvDir).create(recursive: true);
       } catch (_) {}
     }
@@ -954,7 +988,12 @@ class AppState extends ChangeNotifier {
 
   Future<void> openPath(String path) async {
     if (path.isNotEmpty && File(path).existsSync()) {
-      await OpenFilex.open(path);
+      try {
+        final ok = await kNative.invokeMethod<bool>('openFile', {'path': path}) ?? false;
+        if (!ok) toast(t('no_file'));
+      } catch (_) {
+        toast(t('no_app'));
+      }
     } else {
       toast(t('no_file'));
     }
